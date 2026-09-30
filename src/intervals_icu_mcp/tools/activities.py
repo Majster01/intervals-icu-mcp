@@ -7,7 +7,8 @@ from fastmcp import Context
 
 from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
-from ..response_builder import ResponseBuilder
+from ..models import Activity, ActivitySummary
+from ..response_builder import FieldsParam, ResponseBuilder, item_paths, merge_native
 from ._strava import strava_limitation_note
 
 
@@ -56,6 +57,7 @@ async def get_recent_activities(
     limit: Annotated[int, "Number of activities to fetch"] = 30,
     days_back: Annotated[int, "Number of days to look back"] = 30,
     athlete_id: Annotated[str | None, "Athlete ID (for coaches managing multiple athletes)"] = None,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """List the athlete's most recent activities (default last 30 days) — LIGHT summary per item (distance, duration, power, HR, training load).
@@ -63,6 +65,9 @@ async def get_recent_activities(
     Use for "what have I done recently?", "show last week's rides". For
     one specific activity by ID use icu_get_activity_details; to search by
     name/tag use icu_search_activities.
+
+    `fields` (e.g. 'activities.pace') may also name raw Intervals.icu activity fields (e.g. icu_hr_zone_times,
+    pace, hr_load); they are returned only when named.
     """
     assert ctx is not None
     config: ICUConfig = await ctx.get_state("config")
@@ -73,21 +78,26 @@ async def get_recent_activities(
         oldest = oldest_date.strftime("%Y-%m-%d")
 
         async with ICUClient(config) as client:
-            activities = await client.get_activities(
+            raw = await client.get_activities_raw(
                 athlete_id=athlete_id,
                 oldest=oldest,
                 limit=min(limit, 100),  # Cap at 100
             )
 
-            if not activities:
+            if not raw:
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={"activities": [], "count": 0},
                     metadata={"message": "No activities found"},
                 )
 
-            activities_data = [_summarize_activity(a) for a in activities]
+            native = item_paths(fields, "activities")
+            activities_data = [
+                merge_native(_summarize_activity(ActivitySummary(**r)), r, native) for r in raw
+            ]
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data={"activities": activities_data, "count": len(activities_data)},
                 query_type="recent_activities",
             )
@@ -107,6 +117,7 @@ async def get_activities_by_date(
     ] = None,
     limit: Annotated[int, "Max activities to return (newest-first within the window)"] = 500,
     athlete_id: Annotated[str | None, "Athlete ID (for coaches managing multiple athletes)"] = None,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """List activities within an EXPLICIT date window (oldest..newest) — LIGHT summary per item.
@@ -118,28 +129,36 @@ async def get_activities_by_date(
     newest-first; if a window holds more than `limit` items, the oldest are
     dropped first, so widen `limit` (or narrow the window) to reach the very
     oldest.
+
+    `fields` (e.g. 'activities.pace') may also name raw Intervals.icu activity fields (e.g. icu_hr_zone_times,
+    pace, hr_load); they are returned only when named.
     """
     assert ctx is not None
     config: ICUConfig = await ctx.get_state("config")
 
     try:
         async with ICUClient(config) as client:
-            activities = await client.get_activities(
+            raw = await client.get_activities_raw(
                 athlete_id=athlete_id,
                 oldest=oldest,
                 newest=newest,
                 limit=limit,
             )
 
-            if not activities:
+            if not raw:
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={"activities": [], "count": 0},
                     metadata={"message": "No activities found in the given date range"},
                 )
 
-            activities_data = [_summarize_activity(a) for a in activities]
+            native = item_paths(fields, "activities")
+            activities_data = [
+                merge_native(_summarize_activity(ActivitySummary(**r)), r, native) for r in raw
+            ]
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data={"activities": activities_data, "count": len(activities_data)},
                 query_type="activities_by_date",
             )
@@ -154,6 +173,7 @@ async def get_activities_by_date(
 
 async def get_activity_details(
     activity_id: Annotated[str, "Activity ID to fetch"],
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """Fetch the headline SUMMARY of one activity — name, sport, date, distance, duration, training load, weather, plus all top-level metrics in a single JSON blob.
@@ -161,13 +181,17 @@ async def get_activity_details(
     Use for "how was my ride?", "tell me about activity X". For lap-by-lap or
     per-interval breakdown use icu_get_activity_intervals; for second-by-second
     time-series use icu_get_activity_streams.
+
+    `fields` may also name raw Intervals.icu activity fields (e.g. icu_hr_zone_times,
+    pace, hr_load); they are returned only when named.
     """
     assert ctx is not None
     config: ICUConfig = await ctx.get_state("config")
 
     try:
         async with ICUClient(config) as client:
-            activity = await client.get_activity(activity_id=activity_id)
+            raw = await client.get_activity_raw(activity_id)
+            activity = Activity(**raw)
 
             activity_data: dict[str, Any] = {
                 "id": activity.id,
@@ -292,7 +316,8 @@ async def get_activity_details(
                     metadata["subjective_scales"] = scales
 
             return ResponseBuilder.build_response(
-                data=activity_data,
+                fields=fields,
+                data=merge_native(activity_data, raw, fields),
                 analysis=analysis if analysis else None,
                 metadata=metadata if metadata else None,
                 query_type="activity_details",
@@ -310,6 +335,7 @@ async def search_activities(
     query: Annotated[str, "Search query (activity name or tag)"],
     limit: Annotated[int, "Maximum number of results to return"] = 30,
     athlete_id: Annotated[str | None, "Athlete ID (for coaches managing multiple athletes)"] = None,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """Search activities by name or tag, returning a LIGHT result list — id, name, type, date, distance, time only.
@@ -337,6 +363,7 @@ async def search_activities(
 
             if not results:
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={"activities": [], "count": 0, "query": query},
                     metadata={"message": f"No activities found matching '{query}'"},
                 )
@@ -359,6 +386,7 @@ async def search_activities(
                 activities_data.append(activity_item)
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data={"activities": activities_data, "count": len(activities_data), "query": query},
                 query_type="search_activities",
             )
@@ -624,12 +652,16 @@ async def search_activities_full(
     query: Annotated[str, "Search query (activity name or tag)"],
     limit: Annotated[int, "Maximum number of results to return"] = 30,
     athlete_id: Annotated[str | None, "Athlete ID (for coaches managing multiple athletes)"] = None,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """Search activities by name or tag, returning FULL Activity objects with power, HR, training load, intensity factor, normalized power, weather — every metric per result.
 
     Heavy payload. Use only when the lighter search_activities won't tell
     you what you need (e.g. "find my threshold rides with NP above 250W").
+
+    `fields` (e.g. 'activities.pace') may also name raw Intervals.icu activity fields (e.g. icu_hr_zone_times,
+    pace, hr_load); they are returned only when named.
     """
     assert ctx is not None
     config: ICUConfig = await ctx.get_state("config")
@@ -642,20 +674,23 @@ async def search_activities_full(
 
     try:
         async with ICUClient(config) as client:
-            activities = await client.search_activities_full(
+            raw = await client.search_activities_full_raw(
                 athlete_id=athlete_id,
                 query=query,
                 limit=min(limit, 100),
             )
 
-            if not activities:
+            if not raw:
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={"activities": [], "count": 0, "query": query},
                     metadata={"message": f"No activities found matching '{query}'"},
                 )
 
+            native = item_paths(fields, "activities")
             activities_data: list[dict[str, Any]] = []
-            for activity in activities:
+            for raw_item in raw:
+                activity = Activity(**raw_item)
                 activity_item: dict[str, Any] = {
                     "id": activity.id,
                     "name": activity.name or "Untitled",
@@ -690,9 +725,10 @@ async def search_activities_full(
                 if activity.icu_intensity:
                     activity_item["intensity_factor"] = activity.icu_intensity
 
-                activities_data.append(activity_item)
+                activities_data.append(merge_native(activity_item, raw_item, native))
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data={
                     "activities": activities_data,
                     "count": len(activities_data),
@@ -713,26 +749,31 @@ async def get_activities_around(
     activity_id: Annotated[str, "Reference activity ID"],
     count: Annotated[int, "Number of activities before and after"] = 5,
     athlete_id: Annotated[str | None, "Athlete ID (for coaches managing multiple athletes)"] = None,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """Fetch the activities chronologically before and after a reference activity (N each side).
 
     Use for "what did I do around this race?", training-context queries,
     progression comparisons.
+
+    `fields` (e.g. 'activities.pace') may also name raw Intervals.icu activity fields (e.g. icu_hr_zone_times,
+    pace, hr_load); they are returned only when named.
     """
     assert ctx is not None
     config: ICUConfig = await ctx.get_state("config")
 
     try:
         async with ICUClient(config) as client:
-            activities = await client.get_activities_around(
+            raw = await client.get_activities_around_raw(
                 athlete_id=athlete_id,
                 activity_id=activity_id,
                 count=count,
             )
 
-            if not activities:
+            if not raw:
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={
                         "activities": [],
                         "count": 0,
@@ -741,14 +782,18 @@ async def get_activities_around(
                     metadata={"message": "No activities found around the reference activity"},
                 )
 
-            # Sort by date
-            activities.sort(key=lambda x: x.start_date_local)
+            # Sort by date, keeping each model paired with its raw dict
+            pairs = sorted(
+                ((Activity(**r), r) for r in raw), key=lambda pair: pair[0].start_date_local
+            )
+            activities = [a for a, _ in pairs]
+            native = item_paths(fields, "activities")
 
             # Find the reference activity position
             ref_index = next((i for i, a in enumerate(activities) if a.id == activity_id), None)
 
             activities_data: list[dict[str, Any]] = []
-            for i, activity in enumerate(activities):
+            for i, (activity, raw_item) in enumerate(pairs):
                 activity_item: dict[str, Any] = {
                     "id": activity.id,
                     "name": activity.name or "Untitled",
@@ -784,7 +829,7 @@ async def get_activities_around(
                 if performance:
                     activity_item["performance"] = performance
 
-                activities_data.append(activity_item)
+                activities_data.append(merge_native(activity_item, raw_item, native))
 
             result_data = {
                 "reference_activity_id": activity_id,
@@ -798,6 +843,7 @@ async def get_activities_around(
                 result_data["activities_after"] = len(activities) - ref_index - 1
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data=result_data,
                 query_type="activities_around",
             )

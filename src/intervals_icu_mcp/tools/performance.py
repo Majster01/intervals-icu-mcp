@@ -6,7 +6,7 @@ from fastmcp import Context
 
 from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
-from ..response_builder import ResponseBuilder
+from ..response_builder import FieldsParam, ResponseBuilder
 
 
 def _find_value_at_duration(
@@ -29,6 +29,7 @@ async def get_power_curves(
         "Time period shorthand: 'week', 'month', 'year', 'all' (optional)",
     ] = None,
     athlete_id: Annotated[str | None, "Athlete ID (for coaches managing multiple athletes)"] = None,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """Fetch the power-vs-duration curve — best (highest) sustained watts across durations from 5s up to 1h, aggregated over the chosen window.
@@ -71,6 +72,7 @@ async def get_power_curves(
 
             if not curve_set.curves or not curve_set.curves[0].values:
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={"power_curve": [], "period": period_label},
                     metadata={
                         "message": f"No power curve data available for {period_label}. "
@@ -159,6 +161,7 @@ async def get_power_curves(
                 result_data["ftp_analysis"] = ftp_analysis
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data=result_data,
                 query_type="power_curves",
             )

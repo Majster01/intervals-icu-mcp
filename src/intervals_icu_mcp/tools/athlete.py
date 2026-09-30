@@ -8,7 +8,7 @@ from fastmcp import Context
 from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
 from ..models import Wellness
-from ..response_builder import ResponseBuilder
+from ..response_builder import FieldsParam, ResponseBuilder
 from ..sport_settings_format import format_sport_settings_entry
 
 MAX_FITNESS_CHART_DAYS = 365
@@ -444,6 +444,7 @@ async def get_fitness_chart(
         int, "Number of days after today to include (inclusive); use 0 for history only"
     ],
     athlete_id: Annotated[str | None, "Athlete ID (for coaches managing multiple athletes)"] = None,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """Fetch the Performance Management Chart time-series — daily CTL, ATL, and TSB.
@@ -505,6 +506,7 @@ async def get_fitness_chart(
 
             if not series:
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={
                         "athlete_id": athlete_id or config.intervals_icu_athlete_id,
                         "date_range": {"oldest": oldest, "newest": newest},
@@ -527,6 +529,7 @@ async def get_fitness_chart(
             }
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data=data,
                 metadata=metadata,
                 query_type="fitness_chart",

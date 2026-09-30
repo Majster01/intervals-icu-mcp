@@ -7,7 +7,7 @@ from fastmcp import Context
 
 from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
-from ..response_builder import ResponseBuilder
+from ..response_builder import FieldsParam, ResponseBuilder
 
 # Scale labels for subjective metrics — surfaced in response metadata so LLM
 # clients that only see the JSON payload (not the tool docstring) can still
@@ -198,6 +198,7 @@ def _scales_for_records(records: list[dict[str, Any]]) -> dict[str, str]:
 async def get_wellness_data(
     days_back: Annotated[int, "Number of days to look back"] = 7,
     athlete_id: Annotated[str | None, "Athlete ID (for coaches managing multiple athletes)"] = None,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """Fetch wellness records over a RANGE of recent days (default last 7).
@@ -225,6 +226,7 @@ async def get_wellness_data(
 
             if not wellness_records:
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={"wellness_data": [], "count": 0},
                     metadata={"message": f"No wellness data found for the last {days_back} days"},
                 )
@@ -283,6 +285,7 @@ async def get_wellness_data(
                 metadata["scales"] = scales
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data=result_data,
                 metadata=metadata or None,
                 query_type="wellness_data",

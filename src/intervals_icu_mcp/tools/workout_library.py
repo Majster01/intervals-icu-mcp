@@ -8,7 +8,7 @@ from fastmcp import Context
 from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
 from ..models import Folder, Workout
-from ..response_builder import ResponseBuilder
+from ..response_builder import FieldsParam, ResponseBuilder
 from .event_management import ACTIVITY_TYPES_HINT, WORKOUT_SYNTAX_HINT, workout_doc_parse_info
 
 VALID_TARGETS = ("AUTO", "POWER", "HR", "PACE")
@@ -83,6 +83,7 @@ def _workout_to_dict(workout: Workout) -> dict[str, Any]:
 
 async def get_workout_library(
     athlete_id: Annotated[str | None, "Athlete ID (for coaches managing multiple athletes)"] = None,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """List all workout-library folders + training plans the athlete has access to (personal, shared, and followed plans).
@@ -99,6 +100,7 @@ async def get_workout_library(
 
             if not folders:
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={"folders": [], "count": 0},
                     metadata={
                         "message": "No workout folders found. Create folders in Intervals.icu to organize your workouts."
@@ -147,6 +149,7 @@ async def get_workout_library(
             }
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data=result_data,
                 query_type="workout_library",
             )
@@ -162,6 +165,7 @@ async def get_workout_library(
 async def get_workouts_in_folder(
     folder_id: Annotated[int, "Folder ID to get workouts from"],
     athlete_id: Annotated[str | None, "Athlete ID (for coaches managing multiple athletes)"] = None,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """List the workouts stored in one specific library folder or training plan — name, type, structure, training load, intensity factor."""
@@ -174,6 +178,7 @@ async def get_workouts_in_folder(
 
             if not workouts:
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={"workouts": [], "count": 0, "folder_id": folder_id},
                     metadata={"message": f"No workouts found in folder {folder_id}"},
                 )
@@ -237,6 +242,7 @@ async def get_workouts_in_folder(
             }
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data=result_data,
                 query_type="folder_workouts",
             )

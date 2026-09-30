@@ -234,6 +234,8 @@ For the full catalogue of example prompts by category, see [docs/examples.md](ht
 
 Destructive tools are gated by the optional `INTERVALS_ICU_DELETE_MODE` env var (`safe` / `full` / `none`, default `safe`) — a server-side gate outside the model's reach, so unregistered tools can't be invoked. See [docs/tools.md](https://github.com/hhopke/intervals-icu-mcp/blob/main/docs/tools.md#delete-safety-mode) for the full mode table, response envelope, and TZ-buffer rationale.
 
+Heavy read tools also take an optional `fields` list to return only the keys you need, including raw fields such as `icu_hr_zone_times` on activities. See [Response field filtering](https://github.com/hhopke/intervals-icu-mcp/blob/main/docs/tools.md#response-field-filtering).
+
 ## Remote Deployment (HTTP / SSE)
 
 The server runs over **stdio** by default — the right transport for local clients like Claude Desktop, Claude Code, and Cursor. HTTP and SSE transports are available for remote or hosted use.

@@ -7,13 +7,14 @@ from fastmcp import Context
 
 from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
-from ..response_builder import ResponseBuilder
+from ..response_builder import FieldsParam, ResponseBuilder
 
 
 async def get_calendar_events(
     days_ahead: Annotated[int, "Number of days to look ahead"] = 7,
     days_back: Annotated[int, "Number of days to look back"] = 0,
     athlete_id: Annotated[str | None, "Athlete ID (for coaches managing multiple athletes)"] = None,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """Fetch ALL calendar entries in a date window — workouts, notes, races, goals, life-event blocks.
@@ -42,6 +43,7 @@ async def get_calendar_events(
 
             if not events:
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={
                         "events": [],
                         "count": 0,
@@ -142,6 +144,7 @@ async def get_calendar_events(
             }
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data={
                     "events_by_date": events_by_date,
                     "date_range": {"oldest": oldest, "newest": newest},
@@ -161,6 +164,7 @@ async def get_calendar_events(
 async def get_upcoming_workouts(
     limit: Annotated[int, "Maximum number of planned workout events to return"] = 7,
     athlete_id: Annotated[str | None, "Athlete ID (for coaches managing multiple athletes)"] = None,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """Fetch the planned WORKOUT entries dated on the upcoming CALENDAR (filters out notes, races, goals) — these are calendar EVENTS, not workout-library templates.
@@ -194,6 +198,7 @@ async def get_upcoming_workouts(
 
             if not workouts:
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={"workouts": [], "count": 0},
                     metadata={"message": "No workouts planned on your calendar"},
                 )
@@ -256,6 +261,7 @@ async def get_upcoming_workouts(
             total_load = sum(w.icu_training_load or 0 for w in workouts)
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data={
                     "workouts": workouts_data,
                     "count": len(workouts_data),
@@ -275,6 +281,7 @@ async def get_upcoming_workouts(
 async def get_event(
     event_id: Annotated[int, "Event ID to retrieve"],
     athlete_id: Annotated[str | None, "Athlete ID (for coaches managing multiple athletes)"] = None,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """Fetch ONE specific calendar event by ID — full details including description, workout structure, and metrics."""
@@ -353,6 +360,7 @@ async def get_event(
                 event_data["external_id"] = event.external_id
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data=event_data,
                 query_type="get_event",
             )

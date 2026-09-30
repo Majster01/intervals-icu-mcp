@@ -203,6 +203,7 @@ These are *targets*, not hard caps. Going over with good reason is fine — but 
 - **Tool description** (combining docstring + all `Annotated` params): aim for ≤200 tokens. Top-end tools with many parameters can go higher; review them especially carefully.
 - **Per-`Annotated` parameter**: aim for ≤80 tokens. If you need more (e.g. enum lists, schema docs), move the long content into an MCP Resource and reference it. See [`intervals-icu://workout-syntax`](../../../src/intervals_icu_mcp/workout_syntax.py) as the canonical example.
 - **Response payload**: keep median responses under ~1500 tokens. Anthropic recommends a 25K-token cap for tool responses; we should be far below that.
+- **`fields` filter**: a read tool with a heavy or list-shaped payload takes `fields: FieldsParam = None` (from `response_builder`) and passes `fields=fields` to every `build_response` call, including empty-result branches. Add the tool to `FIELDS_TOOLS` in `tests/test_field_filter.py` and to the list in `docs/tools.md`. Don't add it to small-payload tools: it costs ~45 schema tokens per tool.
 
 ### Description quality
 
