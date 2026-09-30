@@ -171,6 +171,17 @@ class ICUClient:
         newest: str | None = None,
         limit: int = 30,
     ) -> list[ActivitySummary]:
+        """List activities for a date range, parsed into ActivitySummary models."""
+        raw = await self.get_activities_raw(athlete_id, oldest, newest, limit)
+        return TypeAdapter(list[ActivitySummary]).validate_python(raw)
+
+    async def get_activities_raw(
+        self,
+        athlete_id: str | None = None,
+        oldest: str | None = None,
+        newest: str | None = None,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
         """List activities for a date range.
 
         Args:
@@ -180,7 +191,7 @@ class ICUClient:
             limit: Maximum number of activities to return
 
         Returns:
-            List of ActivitySummary objects
+            Raw activity dicts as returned by the API
         """
         athlete_id = athlete_id or self.config.intervals_icu_athlete_id
         params: dict[str, str | int] = {"limit": limit}
@@ -191,8 +202,7 @@ class ICUClient:
             params["newest"] = newest
 
         response = await self._request("GET", f"/athlete/{athlete_id}/activities", params=params)
-        adapter = TypeAdapter(list[ActivitySummary])
-        activities = adapter.validate_python(response.json())
+        activities = cast(list[dict[str, Any]], response.json())
 
         # The server applies `limit` to the desc-ordered result (newest N kept, same as
         # this slice); the slice stays as a safety net in case the server returns more.
@@ -208,9 +218,12 @@ class ICUClient:
         Returns:
             Activity model with full details
         """
-        athlete_id = athlete_id or self.config.intervals_icu_athlete_id
+        return Activity(**await self.get_activity_raw(activity_id))
+
+    async def get_activity_raw(self, activity_id: str) -> dict[str, Any]:
+        """Get one activity as the raw API dict (all native fields)."""
         response = await self._request("GET", f"/activity/{activity_id}")
-        return Activity(**response.json())
+        return cast(dict[str, Any], response.json())
 
     async def search_activities(
         self,
@@ -245,6 +258,16 @@ class ICUClient:
         query: str = "",
         limit: int = 30,
     ) -> list[Activity]:
+        """Search activities by name or tag, parsed into full Activity models."""
+        raw = await self.search_activities_full_raw(athlete_id, query, limit)
+        return TypeAdapter(list[Activity]).validate_python(raw)
+
+    async def search_activities_full_raw(
+        self,
+        athlete_id: str | None = None,
+        query: str = "",
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
         """Search for activities by name or tag, returning full Activity objects.
 
         Args:
@@ -253,7 +276,7 @@ class ICUClient:
             limit: Maximum number of results to return
 
         Returns:
-            List of full Activity objects
+            Raw activity dicts as returned by the API
         """
         athlete_id = athlete_id or self.config.intervals_icu_athlete_id
         params = {"q": query}
@@ -261,8 +284,7 @@ class ICUClient:
         response = await self._request(
             "GET", f"/athlete/{athlete_id}/activities/search-full", params=params
         )
-        adapter = TypeAdapter(list[Activity])
-        results = adapter.validate_python(response.json())
+        results = cast(list[dict[str, Any]], response.json())
 
         return results[:limit]
 
@@ -272,6 +294,16 @@ class ICUClient:
         athlete_id: str | None = None,
         count: int = 5,
     ) -> list[Activity]:
+        """Get activities before and after one activity, parsed into Activity models."""
+        raw = await self.get_activities_around_raw(activity_id, athlete_id, count)
+        return TypeAdapter(list[Activity]).validate_python(raw)
+
+    async def get_activities_around_raw(
+        self,
+        activity_id: str,
+        athlete_id: str | None = None,
+        count: int = 5,
+    ) -> list[dict[str, Any]]:
         """Get activities before and after a specific activity.
 
         Args:
@@ -280,7 +312,7 @@ class ICUClient:
             count: Number of activities to return before and after (default 5)
 
         Returns:
-            List of Activity objects around the reference activity
+            Raw activity dicts around the reference activity
         """
         athlete_id = athlete_id or self.config.intervals_icu_athlete_id
         # The API expects query params `activity_id` and `limit` (not `id`/`count`);
@@ -290,8 +322,7 @@ class ICUClient:
         response = await self._request(
             "GET", f"/athlete/{athlete_id}/activities-around", params=params
         )
-        adapter = TypeAdapter(list[Activity])
-        return adapter.validate_python(response.json())
+        return cast(list[dict[str, Any]], response.json())
 
     async def update_activity(
         self,
@@ -759,9 +790,12 @@ class ICUClient:
         Returns:
             List of Interval objects
         """
+        return IntervalsDTO(**await self.get_activity_intervals_raw(activity_id)).icu_intervals
+
+    async def get_activity_intervals_raw(self, activity_id: str) -> dict[str, Any]:
+        """Get the raw IntervalsDTO dict (``icu_intervals`` holds native interval fields)."""
         response = await self._request("GET", f"/activity/{activity_id}/intervals")
-        dto = IntervalsDTO(**response.json())
-        return dto.icu_intervals
+        return cast(dict[str, Any], response.json())
 
     async def get_activity_streams(
         self,

@@ -14,6 +14,11 @@ that preserve the information (key renames, restructuring, added fields) ship in
 clients. (Releases up to and including 4.0.0 treated any response-shape change as
 breaking; this narrower contract applies from the next release onward.)
 
+## [Unreleased]
+
+### Added
+- Twenty heavy read tools take an optional `fields` list that trims the response `data` to the named keys, to cut token use when only a few metrics are needed. Paths use dots (`training.training_load`), are applied to every item of a list (`activities.distance_meters`), and accept `*` for date-keyed maps (`events_by_date.*.name`). `id`/`activity_id` are always kept, and unknown paths are reported in `metadata.unknown_fields`. On the activity detail, list and interval tools, `fields` can also name raw Intervals.icu fields that the curated response omits, such as `icu_hr_zone_times`, `pace` or `hr_load`, returned unchanged and only when named. Default responses are unchanged. Measured on synthetic payloads: activity details with native HR zones ~80 tokens vs ~570 for details plus the HR histogram, and a 30-activity list with two fields is ~80% smaller. The parameter adds ~45 tokens of schema per tool. See [docs/tools.md](docs/tools.md#response-field-filtering).
+
 ## [5.4.0] — 2026-09-27
 
 ### Added

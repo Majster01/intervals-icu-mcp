@@ -48,6 +48,34 @@ Set the mode in your client config alongside the credentials:
 
 **Why library workouts are allowed in safe mode:** A library workout is a reusable template. Deleting one leaves calendar events (including ones created from it by `icu_apply_training_plan`) and recorded activities untouched, and the template can be rebuilt from its workout text — the same low-stakes profile as gear.
 
+## Response field filtering
+
+Heavy read tools take an optional `fields` list that trims `data` down to the keys you name, so an LLM can pull just distance, time, zones and load without the rest of the payload. Omit it (or pass `[]`) for the full response, which is unchanged.
+
+- **Dot paths** reach nested keys: `training.training_load`. Naming a key keeps its whole subtree (`power` keeps the whole power block).
+- **Lists are traversed per item:** `activities.distance_meters` keeps that key on every activity, and `intervals.performance.average_heartrate` does the same for laps.
+- **`*` matches any dict key**, for date-keyed maps: `events_by_date.*.name`.
+- **`id` and `activity_id` are always kept**, so filtered items stay referenceable.
+- **Unknown paths are reported** in `metadata.unknown_fields`, with `metadata.available_fields` listing what the response has, so the model can retry. `analysis` and `metadata` are never filtered.
+
+**Native passthrough.** On the activity tools, `fields` may also name raw Intervals.icu API fields that the curated response leaves out. They are copied through unchanged and only when named, so the default payload doesn't grow:
+
+| Tool | Path form | Example native fields |
+|---|---|---|
+| `icu_get_activity_details` | `icu_hr_zone_times` | `pace`, `gap`, `icu_hr_zones`, `icu_hr_zone_times`, `pace_zone_times`, `icu_zone_times`, `hr_load`, `pace_load`, `power_load` |
+| `icu_get_recent_activities`, `icu_get_activities_by_date`, `icu_get_activities_around`, `icu_search_activities_full` | `activities.icu_hr_zone_times` | same as above |
+| `icu_get_activity_intervals` | `intervals.zone` | `zone`, `average_gap`, `moving_time`, … |
+
+Values are the API's own units (`pace`/`gap` in m/s, zone times in seconds per zone, zone bounds in bpm). Curated keys win: a native field is only added when the curated response has no key of that name.
+
+Example: length, pace, time, HR zones and load for one run in a single ~80-token response:
+
+```json
+{"activity_id": "i12345", "fields": ["distance_meters", "moving_time_seconds", "pace", "icu_hr_zones", "icu_hr_zone_times", "training.training_load"]}
+```
+
+**Tools with `fields`:** `icu_get_recent_activities`, `icu_get_activities_by_date`, `icu_get_activity_details`, `icu_search_activities`, `icu_search_activities_full`, `icu_get_activities_around`, `icu_get_activity_streams`, `icu_get_activity_intervals`, `icu_get_best_efforts`, `icu_search_intervals`, `icu_get_calendar_events`, `icu_get_upcoming_workouts`, `icu_get_event`, `icu_get_fitness_chart`, `icu_get_wellness_data`, `icu_get_power_curves`, `icu_get_hr_curves`, `icu_get_pace_curves`, `icu_get_workout_library`, `icu_get_workouts_in_folder`. Small-payload tools don't take it, because the parameter's schema would cost more than it saves. `uv run python scripts/measure_tokens.py` reports the savings and the schema cost.
+
 ## Tools
 
 ### Coaching and following other athletes

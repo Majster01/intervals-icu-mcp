@@ -8,7 +8,8 @@ from fastmcp import Context
 
 from ..auth import ICUConfig
 from ..client import ICUAPIError, ICUClient
-from ..response_builder import ResponseBuilder
+from ..models import IntervalsDTO
+from ..response_builder import FieldsParam, ResponseBuilder, item_paths, merge_native
 from ._strava import fetch_strava_limitation_note
 
 
@@ -22,6 +23,7 @@ async def get_activity_streams(
         int | None,
         "Thin every returned stream to at most this many samples by keeping every Nth one (the same N for all streams, so indices stay aligned). Omit for full resolution. ~500 is plenty to trace a route or see the shape of a ride. Samples are not always 1 s apart, so include 'time' to know when each kept sample was recorded.",
     ] = None,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """Fetch RAW per-sample time-series of one activity — second-by-second arrays for power, HR, cadence, speed, altitude, GPS, temperature, grade, etc.
@@ -63,6 +65,7 @@ async def get_activity_streams(
                 if strava_note:
                     analysis["data_availability"] = strava_note
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={"streams": {}, "available_streams": []},
                     analysis=analysis if analysis else None,
                     metadata={"message": "No stream data available for this activity"},
@@ -124,6 +127,7 @@ async def get_activity_streams(
                 }
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data=result_data,
                 query_type="activity_streams",
             )
@@ -138,6 +142,7 @@ async def get_activity_streams(
 
 async def get_activity_intervals(
     activity_id: Annotated[str, "Activity ID to fetch intervals for"],
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """Fetch the per-LAP / per-interval breakdown of one activity — each segment with its target, actual power/HR/pace, and type (warm-up / work / rest / cool-down).
@@ -146,13 +151,18 @@ async def get_activity_intervals(
     "did I hit my intervals?". For headline summary metrics use
     get_activity_details; for raw second-by-second data use
     get_activity_streams.
+
+    `fields` (e.g. 'intervals.average_gap') may also name raw Intervals.icu
+    interval fields; they are returned only when named.
     """
     assert ctx is not None
     config: ICUConfig = await ctx.get_state("config")
 
     try:
         async with ICUClient(config) as client:
-            intervals = await client.get_activity_intervals(activity_id)
+            raw = await client.get_activity_intervals_raw(activity_id)
+            intervals = IntervalsDTO(**raw).icu_intervals
+            raw_intervals: list[dict[str, Any]] = raw.get("icu_intervals") or []
 
             if not intervals:
                 analysis: dict[str, Any] = {}
@@ -160,13 +170,15 @@ async def get_activity_intervals(
                 if strava_note:
                     analysis["data_availability"] = strava_note
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={"intervals": [], "count": 0, "activity_id": activity_id},
                     analysis=analysis if analysis else None,
                     metadata={"message": "No intervals found for this activity"},
                 )
 
+            native = item_paths(fields, "intervals")
             intervals_data: list[dict[str, Any]] = []
-            for interval in intervals:
+            for interval, raw_item in zip(intervals, raw_intervals, strict=False):
                 interval_item: dict[str, Any] = {
                     "id": interval.id,
                     "type": interval.type,
@@ -208,7 +220,7 @@ async def get_activity_intervals(
                         "max": interval.target_max,
                     }
 
-                intervals_data.append(interval_item)
+                intervals_data.append(merge_native(interval_item, raw_item, native))
 
             # Calculate summary
             work_intervals = [i for i in intervals if i.type and "WORK" in i.type.upper()]
@@ -233,6 +245,7 @@ async def get_activity_intervals(
             }
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data=result_data,
                 query_type="activity_intervals",
             )
@@ -261,6 +274,7 @@ async def get_best_efforts(
         "At least one of 'duration' or 'distance' is required.",
     ] = None,
     count: Annotated[int, "Number of efforts to return (default 8)"] = 8,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """Find the top-N peak efforts WITHIN a single activity for a given stream + target duration or distance.
@@ -290,6 +304,7 @@ async def get_best_efforts(
                 if strava_note:
                     analysis["data_availability"] = strava_note
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={"best_efforts": [], "count": 0, "activity_id": activity_id},
                     analysis=analysis if analysis else None,
                     metadata={"message": "No best efforts found for this activity"},
@@ -318,6 +333,7 @@ async def get_best_efforts(
             }
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data=result_data,
                 query_type="best_efforts",
             )
@@ -362,6 +378,7 @@ async def search_intervals(
     ] = None,
     limit: Annotated[int, "Maximum number of matching activities to return"] = 30,
     athlete_id: Annotated[str | None, "Athlete ID (for coaches managing multiple athletes)"] = None,
+    fields: FieldsParam = None,
     ctx: Context | None = None,
 ) -> str:
     """Search intervals ACROSS ALL the athlete's activities (cross-activity).
@@ -410,6 +427,7 @@ async def search_intervals(
                 criteria_str = ", ".join(search_criteria) if search_criteria else "your criteria"
 
                 return ResponseBuilder.build_response(
+                    fields=fields,
                     data={"activities": [], "count": 0},
                     metadata={"message": f"No intervals found matching {criteria_str}"},
                 )
@@ -432,6 +450,7 @@ async def search_intervals(
             }
 
             return ResponseBuilder.build_response(
+                fields=fields,
                 data=result_data,
                 query_type="interval_search",
             )
