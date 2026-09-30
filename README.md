@@ -244,6 +244,8 @@ The server runs over **stdio** by default — the right transport for local clie
 
 See [docs/remote-deployment.md](https://github.com/hhopke/intervals-icu-mcp/blob/main/docs/remote-deployment.md) for transport flags and the full security model.
 
+To use it as a **claude.ai custom connector** (web, desktop, mobile) on a public URL, enable the built-in GitHub OAuth gate with a username allowlist — see [Public deployment with OAuth](https://github.com/hhopke/intervals-icu-mcp/blob/main/docs/remote-deployment.md#public-deployment-with-oauth-claude-web-desktop-and-mobile).
+
 ## Documentation
 
 - [Example prompts](https://github.com/hhopke/intervals-icu-mcp/blob/main/docs/examples.md) — full catalogue of natural-language prompts by category

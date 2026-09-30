@@ -6,17 +6,25 @@ from typing import Any
 
 from dotenv import load_dotenv
 from fastmcp import FastMCP
+from fastmcp.server.middleware.authorization import AuthMiddleware
 
 # Load environment variables
 load_dotenv()
 
-# Initialize FastMCP server
-mcp = FastMCP("intervals_icu_mcp")
+from .remote_auth import allowed_github_users, allowed_users_check, build_auth_provider
+
+# Initialize FastMCP server. OAuth is opt-in (MCP_GITHUB_CLIENT_ID) and only
+# applies to HTTP transports — see docs/remote-deployment.md.
+_AUTH_PROVIDER = build_auth_provider()
+mcp = FastMCP("intervals_icu_mcp", auth=_AUTH_PROVIDER)
 
 # Register middleware
 from .auth import load_config
 from .middleware import ConfigMiddleware
 
+if _AUTH_PROVIDER is not None:
+    # Runs before ConfigMiddleware: unauthorized callers never reach the credentials.
+    mcp.add_middleware(AuthMiddleware(auth=allowed_users_check))
 mcp.add_middleware(ConfigMiddleware())
 
 # Read delete mode at startup. This decides which destructive tools are
@@ -1198,7 +1206,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 async def _count_registered_tools() -> int:
-    return len(await mcp.list_tools())
+    # Skip middleware: the OAuth allowlist would hide every tool from this tokenless call.
+    return len(await mcp.list_tools(run_middleware=False))
 
 
 def _emit_startup_log() -> None:
@@ -1208,8 +1217,10 @@ def _emit_startup_log() -> None:
         count = asyncio.run(_count_registered_tools())
     except Exception:
         count = -1
+    oauth = f"github({len(allowed_github_users())} allowed)" if _AUTH_PROVIDER else "off"
     print(
-        f"intervals-icu MCP starting: delete_mode={_DELETE_MODE}, registered_tools={count}",
+        f"intervals-icu MCP starting: delete_mode={_DELETE_MODE}, "
+        f"registered_tools={count}, oauth={oauth}",
         file=sys.stderr,
     )
 
@@ -1220,6 +1231,12 @@ def main() -> None:
     _emit_startup_log()
 
     if args.transport == "stdio":
+        if _AUTH_PROVIDER is not None:
+            print(
+                "warning: OAuth is configured but has no effect over stdio; "
+                "use --transport http for remote deployment.",
+                file=sys.stderr,
+            )
         mcp.run()
         return
 
